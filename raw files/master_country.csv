@@ -1,0 +1,7 @@
+Country,country_id,region,region_id
+UK,C-001,Europe,E-0001
+India,C-002,South Asia,E-0002
+Australia,C-003,Oceania,E-0003
+New Zealand,C-004,Oceania,E-0004
+USA,C-005,North America,E-0005
+Canada,C-006,North America,E-0006
