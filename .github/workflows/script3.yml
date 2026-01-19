@@ -32,7 +32,7 @@ jobs:
       run: |
         DEST_HOST=${{ secrets.DATABRICKS_DEST_HOST }}
         DEST_TOKEN=${{ secrets.DATABRICKS_DEST_TOKEN }}
-        DEST_BASE="/ETL/scripts/main"
+        DEST_BASE="/py/scripts/main"
         for file in notebooks_to_deploy/*.py; do
           name=$(basename "$file" .py)
           dest_path="$DEST_BASE/$name"
@@ -59,7 +59,7 @@ jobs:
       run: |
         DEST_HOST=${{ secrets.DATABRICKS_DEST_HOST }}
         DEST_TOKEN=${{ secrets.DATABRICKS_DEST_TOKEN }}
-        WORKFLOW_NAME="WF_ADB"
+        WORKFLOW_NAME="WF_PROJECT"
         
         echo "Verificando si existe el workflow: $WORKFLOW_NAME"
         
@@ -111,29 +111,29 @@ jobs:
           exit 1
         fi
     
-    - name: Create Databricks Workflow WF_ADB
+    - name: Create Databricks Workflow WF_PROJECT
       run: |
         DEST_HOST=${{ secrets.DATABRICKS_DEST_HOST }}
         DEST_TOKEN=${{ secrets.DATABRICKS_DEST_TOKEN }}
         DEST_BASE="/py/scripts/main"
         CLUSTER_ID="${{ env.CLUSTER_ID }}"
         
-        echo "Creando workflow: WF_ADB con cluster existente ID: $CLUSTER_ID"
+        echo "Creando workflow: WF_PROJECT con cluster existente ID: $CLUSTER_ID"
         
         # Crear el JSON del workflow usando cluster existente
         cat > workflow_config.json << EOF
         {
-          "name": "WF_ADB",
+          "name": "WF_PROJECT",
           "format": "MULTI_TASK",
           "tasks": [
             {
-              "task_key": "tarea1_notebook1",
-              "description": "Ejecuta notebook ntbk_1 con parámetros",
+              "task_key": "preparacionambiente",
+              "description": "Ejecuta notebook preparacionambiente con parámetros",
               "notebook_task": {
-                "notebook_path": "/py/scripts/main/ntbk_1",
+                "notebook_path": "/py/scripts/main/preparacionambiente",
                 "source": "WORKSPACE",
                 "base_parameters": {
-                  "storageLocation": "storage"
+                  "storageName": "adlsmartdatalavs2"
                 }
               },
               "existing_cluster_id": "$CLUSTER_ID",
@@ -141,15 +141,16 @@ jobs:
               "max_retries": 2
             },
             {
-              "task_key": "tarea2_notebook2",
-              "description": "Ejecuta notebook ntbk_2 con parámetros",
+              "task_key": "ingestchocolatesales",
+              "description": "Ejecuta notebook ingestchocolatesales con parámetros",
               "notebook_task": {
-                "notebook_path": "/py/scripts/main/ntbk_2",
+                "notebook_path": "/py/scripts/main/ingestchocolatesales",
                 "source": "WORKSPACE",
                 "base_parameters": {
-                  "inputPath": "/data/input",
-                  "outputPath": "/data/output",
-                  "processDate": "$(date +%Y-%m-%d)"
+                  "storage_name": "adlsmartdatalavs2",
+                  "container": "raw",
+                  "catalogo": "catalogo",
+                  "esquema": "bronze"
                 }
               },
               "existing_cluster_id": "$CLUSTER_ID",
@@ -157,7 +158,74 @@ jobs:
               "max_retries": 2,
               "depends_on": [
                 {
-                  "task_key": "tarea1_notebook1"
+                  "task_key": "preparacionambiente"
+                }
+              ]
+            },
+            {
+              "task_key": "ingestmasters",
+              "description": "Ejecuta notebook ingestmasters con parámetros",
+              "notebook_task": {
+                "notebook_path": "/py/scripts/main/ingestmasters",
+                "source": "WORKSPACE",
+                "base_parameters": {
+                  "storage_name": "adlsmartdatalavs2",
+                  "container": "raw",
+                  "catalogo": "catalogo",
+                  "esquema": "bronze"
+                }
+              },
+              "existing_cluster_id": "$CLUSTER_ID",
+              "timeout_seconds": 3600,
+              "max_retries": 2,
+              "depends_on": [
+                {
+                  "task_key": "preparacionambiente"
+                }
+              ]
+            },
+            {
+              "task_key": "transform",
+              "description": "Ejecuta notebook transform con parámetros",
+              "notebook_task": {
+                "notebook_path": "/py/scripts/main/transform",
+                "source": "WORKSPACE",
+                "base_parameters": {
+                  "catalogo": "chocolate_sales",
+                  "esquema_source": "bronze",
+                  "esquema_sink": "silver"
+                }
+              },
+              "existing_cluster_id": "$CLUSTER_ID",
+              "timeout_seconds": 3600,
+              "max_retries": 2,
+              "depends_on": [
+                {
+                  "task_key": "ingestchocolatesales"
+                },
+                {
+                  "task_key": "ingestmasters"
+                }
+              ]
+            },
+            {
+              "task_key": "load",
+              "description": "Ejecuta notebook load con parámetros",
+              "notebook_task": {
+                "notebook_path": "/py/scripts/main/load",
+                "source": "WORKSPACE",
+                "base_parameters": {
+                  "catalogo": "chocolate_sales",
+                  "esquema_source": "silver",
+                  "esquema_sink": "golden"
+                }
+              },
+              "existing_cluster_id": "$CLUSTER_ID",
+              "timeout_seconds": 3600,
+              "max_retries": 2,
+              "depends_on": [
+                {
+                  "task_key": "transform"
                 }
               ]
             }
@@ -168,8 +236,8 @@ jobs:
             "pause_status": "PAUSED"
           },
           "email_notifications": {
-            "on_failure": [],
-            "on_success": [],
+            "on_failure": ["lesservenegas@gmail.com"],
+            "on_success": ["lesservenegas@gmail.com"],
             "no_alert_for_skipped_runs": false
           },
           "webhook_notifications": {},
@@ -197,7 +265,7 @@ jobs:
         job_id=$(echo "$create_response" | jq -r '.job_id')
         
         if [ "$job_id" != "" ] && [ "$job_id" != "null" ]; then
-          echo "✅ Workflow 'WF_ADB' creado exitosamente con ID: $job_id"
+          echo "✅ Workflow 'WF_PROJECT' creado exitosamente con ID: $job_id"
           
           # Obtener detalles del workflow creado
           workflow_details=$(curl -s -X GET \
@@ -216,7 +284,7 @@ jobs:
       run: |
         DEST_HOST=${{ secrets.DATABRICKS_DEST_HOST }}
         DEST_TOKEN=${{ secrets.DATABRICKS_DEST_TOKEN }}
-        WORKFLOW_NAME="WF_ADB"
+        WORKFLOW_NAME="WF_PROJECT"
         
         echo "🔍 Validando la configuración del workflow creado..."
         
@@ -251,11 +319,11 @@ jobs:
           exit 1
         fi
     
-    - name: Execute Workflow WF_ADB
+    - name: Execute Workflow WF_PROJECT
       run: |
         DEST_HOST=${{ secrets.DATABRICKS_DEST_HOST }}
         DEST_TOKEN=${{ secrets.DATABRICKS_DEST_TOKEN }}
-        WORKFLOW_NAME="WF_ADB"
+        WORKFLOW_NAME="WF_PROJECT"
         
         echo "🚀 Ejecutando workflow: $WORKFLOW_NAME"
         
@@ -385,8 +453,11 @@ jobs:
         echo "✅ Notebooks desplegados: ntbk_1, ntbk_2"
         echo "✅ Workflow creado: WF_ADB"
         echo "✅ Tareas configuradas:"
-        echo "   - tarea1_notebook1 (ntbk_1)"
-        echo "   - tarea2_notebook2 (ntbk_2)"
+        echo "   - tarea1_notebook1 (preparacionambiente)"
+        echo "   - tarea2_notebook2 (ingestchocolatesales)"
+        echo "   - tarea3_notebook3 (ingestmasters)"
+        echo "   - tarea4_notebook4 (transform)"
+        echo "   - tarea5_notebook5 (load)"
         echo "✅ Cluster existente: cluster_SD configurado"
         echo "🚀 Workflow ejecutado automáticamente"
         echo ""
